@@ -1,1 +1,230 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Scott SNG Runner</title>
+    <style>
+        body { margin: 0; background: #222; display: flex; justify-content: center; align-items: center; height: 100vh; font-family: 'Courier New', Courier, monospace; overflow: hidden; }
+        canvas { background: #555; border: 2px solid #fff; max-width: 100%; max-height: 100%; image-rendering: pixelated; }
+    </style>
+</head>
+<body>
 
+<canvas id="game"></canvas>
+
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+
+canvas.width = 800;
+canvas.height = 400;
+
+// Состояние игры
+let score = 0;
+let highScore = localStorage.getItem('sng_score') || 0;
+let hasCup = localStorage.getItem('sng_cup') === 'true';
+let gameState = 'MENU'; // MENU, PLAYING, WIN, GAMEOVER
+let gameSpeed = 5;
+let frame = 0;
+
+// Игрок (Скотт)
+const player = {
+    x: 80, y: 300, w: 40, h: 50, dy: 0, gravity: 0.8, jump: -15, grounded: false,
+    draw() {
+        ctx.fillStyle = '#00aaff'; // Синий аватар Скотта
+        ctx.fillRect(this.x, this.y, this.w, this.h);
+        ctx.fillStyle = 'white'; // Глаза
+        ctx.fillRect(this.x + 25, this.y + 10, 8, 8);
+        ctx.fillRect(this.x + 10, this.y + 10, 8, 8);
+    }
+};
+
+let obstacles = [];
+let backgrounds = [];
+
+// Фоновые дома
+function spawnHouse() {
+    backgrounds.push({ x: 800, w: 100 + Math.random()*100, h: 150 + Math.random()*100, type: Math.random() > 0.5 ? 'house' : 'shop' });
+}
+
+// Препятствия
+function spawnObstacle() {
+    let r = Math.random();
+    let obs = { x: 800, passed: false };
+    if (r < 0.3) { // Маленький забор
+        obs.w = 30; obs.h = 40; obs.type = 'fence1';
+    } else if (r < 0.6) { // Большой забор
+        obs.w = 60; obs.h = 50; obs.type = 'fence2';
+    } else if (r < 0.8) { // Мусорка
+        obs.w = 40; obs.h = 60; obs.type = 'trash';
+    } else { // Голубь
+        obs.w = 30; obs.h = 20; obs.type = 'bird'; obs.y = 220;
+    }
+    if (obs.type !== 'bird') obs.y = 340 - obs.h;
+    obstacles.push(obs);
+}
+
+function reset() {
+    score = 0;
+    gameSpeed = 6;
+    obstacles = [];
+    backgrounds = [];
+    player.y = 340 - player.h;
+    player.dy = 0;
+}
+
+function drawText(text, x, y, size, color = "white", align = "center") {
+    ctx.font = `bold ${size} Courier New`;
+    ctx.textAlign = align;
+    ctx.strokeStyle = "black";
+    ctx.lineWidth = 4;
+    ctx.strokeText(text, x, y);
+    ctx.fillStyle = color;
+    ctx.fillText(text, x, y);
+}
+
+function update() {
+    if (gameState !== 'PLAYING') return;
+
+    frame++;
+    if (frame % 100 === 0) spawnHouse();
+    if (frame % 80 === 0) spawnObstacle();
+
+    // Гравитация
+    player.dy += player.gravity;
+    player.y += player.dy;
+    if (player.y > 340 - player.h) {
+        player.y = 340 - player.h;
+        player.dy = 0;
+        player.grounded = true;
+    }
+
+    // Движение фона
+    backgrounds.forEach((b, i) => {
+        b.x -= gameSpeed * 0.5;
+        if (b.x + b.w < 0) backgrounds.splice(i, 1);
+    });
+
+    // Движение препятствий
+    obstacles.forEach((o, i) => {
+        o.x -= gameSpeed;
+        // Коллизия
+        if (player.x < o.x + o.w && player.x + player.w > o.x && player.y < o.y + o.h && player.y + player.h > o.y) {
+            gameState = 'GAMEOVER';
+            if (score > highScore) {
+                highScore = score;
+                localStorage.setItem('sng_score', highScore);
+            }
+        }
+        if (o.x + o.w < 0) obstacles.splice(i, 1);
+    });
+
+    score++;
+    if (score % 500 === 0) gameSpeed += 0.5;
+
+    // Победа на 5000
+    if (score >= 5000) {
+        gameState = 'WIN';
+        hasCup = true;
+        localStorage.setItem('sng_cup', 'true');
+    }
+}
+
+function draw() {
+    ctx.fillStyle = '#777'; // Серый фон неба
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Рисуем дома
+    backgrounds.forEach(b => {
+        ctx.fillStyle = '#444';
+        ctx.fillRect(b.x, 340 - b.h, b.w, b.h);
+        ctx.fillStyle = '#666'; // Окна
+        for(let i=10; i<b.w-10; i+=30) {
+            for(let j=10; j<b.h-20; j+=40) ctx.fillRect(b.x+i, (340-b.h)+j, 15, 20);
+        }
+    });
+
+    // Земля
+    ctx.fillStyle = '#333';
+    ctx.fillRect(0, 340, canvas.width, 60);
+
+    if (gameState === 'MENU') {
+        drawText("SNG RUNNER", 400, 150, "50px");
+        drawText(`РЕКОРД: ${highScore}`, 400, 190, "20px");
+        
+        // Кнопка Играть
+        ctx.fillStyle = "#fff"; ctx.fillRect(300, 220, 200, 60);
+        drawText("ИГРАТЬ", 400, 258, "25px", "black");
+        
+        // Кнопка Выйти
+        ctx.fillStyle = "#fff"; ctx.fillRect(20, 340, 100, 40);
+        drawText("ВЫХОД", 70, 365, "15px", "black");
+
+        if (hasCup) { // Рисуем кубок если есть победа
+            ctx.fillStyle = "gold";
+            ctx.beginPath(); ctx.rect(385, 40, 30, 30); ctx.fill();
+            ctx.fillRect(395, 70, 10, 10); ctx.fillRect(380, 80, 40, 5);
+        }
+
+    } else if (gameState === 'PLAYING') {
+        player.draw();
+        obstacles.forEach(o => {
+            if (o.type === 'bird') {
+                ctx.fillStyle = "white";
+                ctx.fillRect(o.x, o.y, o.w, o.h);
+                ctx.fillRect(o.x-5, o.y+5, 10, 5); // Крылья
+            } else if (o.type === 'trash') {
+                ctx.fillStyle = "#555"; ctx.fillRect(o.x, o.y, o.w, o.h);
+                ctx.fillStyle = "#222"; ctx.fillRect(o.x+5, o.y+5, 30, 5);
+            } else {
+                ctx.fillStyle = "#8b4513"; ctx.fillRect(o.x, o.y, o.w, o.h); // Забор
+            }
+        });
+        drawText(`ОЧКИ: ${score}`, 700, 40, "20px");
+
+    } else if (gameState === 'WIN') {
+        ctx.fillStyle = "white"; ctx.fillRect(500, 240, 150, 100); // Остановка
+        ctx.fillStyle = "green"; ctx.fillRect(520, 270, 110, 70); // Автобус
+        drawText("YOU WIN", 400, 150, "60px", "gold");
+        drawText("Ты сел в автобус и уехал!", 400, 200, "20px");
+        drawText("Нажми чтобы в меню", 400, 380, "15px");
+
+    } else if (gameState === 'GAMEOVER') {
+        drawText("GAME OVER", 400, 200, "50px", "red");
+        drawText("Нажми чтобы переиграть", 400, 240, "20px");
+    }
+}
+
+function loop() {
+    update();
+    draw();
+    requestAnimationFrame(loop);
+}
+
+// Управление кликом
+canvas.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    const rect = canvas.getBoundingClientRect();
+    const touchX = (e.touches[0].clientX - rect.left) * (canvas.width / rect.width);
+    const touchY = (e.touches[0].clientY - rect.top) * (canvas.height / rect.height);
+
+    if (gameState === 'MENU') {
+        if (touchX > 300 && touchX < 500 && touchY > 220 && touchY < 280) {
+            reset();
+            gameState = 'PLAYING';
+        }
+    } else if (gameState === 'PLAYING') {
+        if (player.grounded) {
+            player.dy = player.jump;
+            player.grounded = false;
+        }
+    } else {
+        gameState = 'MENU';
+    }
+});
+
+loop();
+</script>
+</body>
+</html>
